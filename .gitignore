@@ -1,0 +1,13 @@
+.env
+chrome_debug_data/
+output/
+__pycache__/
+*.log
+*.pyc
+*.xlsx
+*.xls
+*.csv
+*.png
+*.jpg
+*.jpeg
+run_output.txt

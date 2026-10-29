@@ -1,0 +1,9 @@
+[
+    {
+        "store_id": "default_store",
+        "name": "Etsy Primary Store",
+        "proxy": "",
+        "profile_dir": "profiles/default_store",
+        "notes": "Primary Etsy store profile"
+    }
+]
