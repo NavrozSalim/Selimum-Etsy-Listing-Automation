@@ -41,6 +41,7 @@ logging.basicConfig(
 log = logging.getLogger("sku_replace")
 
 sys.path.insert(0, str(PROJECT))
+sys.path.insert(0, str(PROJECT / "create_listing"))
 
 from openpyxl import Workbook, load_workbook
 

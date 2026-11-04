@@ -6,5 +6,5 @@ if "%~1"=="" (
 ) else (
     set TITLE=%*
 )
-python create_listing.py --tags "%TITLE%"
+python create_listing\create_listing.py --tags "%TITLE%"
 pause

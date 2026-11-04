@@ -10,8 +10,11 @@ and dumps the exact structure of:
 
 from pathlib import Path
 import json
+import sys
 import time
 from selenium.webdriver.common.by import By
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "create_listing"))
 from create_listing import (
     _load_config, resolve_paths, store_lookup, connect_store_vpn, wait_for_vpn,
     close_chrome, automation_user_data, start_chrome, connect_selenium,

@@ -46,12 +46,16 @@ from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
+BOT_DIR = Path(__file__).resolve().parent
+# Project root: stores.json, output, Create.xlsx, chrome_debug_data, core and the shared Etsy modules.
+ROOT = BOT_DIR.parent
+sys.path.insert(0, str(ROOT))
+
 from core.tag_engine import generate_etsy_tags, validate_tags, format_tags_output
 import etsy_output
 
-ROOT = Path(__file__).resolve().parent
 STORES_PATH = ROOT / "stores.json"
-LOG_PATH = ROOT / "create_listing.log"
+LOG_PATH = BOT_DIR / "create_listing.log"
 OUTPUT_DIR = ROOT / "output"
 FAILURES_DIR = OUTPUT_DIR / "failures"
 PHOTO_DIR = OUTPUT_DIR / "photos"

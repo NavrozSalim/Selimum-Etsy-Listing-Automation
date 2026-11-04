@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Callable, Optional
@@ -16,6 +17,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "create_listing"))
 
 import create_listing as cl
 import etsy_output

@@ -52,7 +52,7 @@ Built specifically for high-volume Etsy sellers managing multiple stores with de
 Selimum Etsy Listing Automation/
 ├── stores.json              # Store configuration (VPN account, assigned IP, Chrome profile)
 ├── Create.xlsx              # Master Excel listing input file
-├── create_listing.py        # Core automation script (mirrors Reverb bot structure)
+├── create_listing/create_listing.py  # Create listings (price_stock/ and sku_replace/ edit existing ones)
 ├── run.bat                  # 1-Click batch runner
 ├── generate_tags.bat        # 1-Click prompt to generate 13 SEO tags for any title
 ├── gui.py                   # PyQt6 Desktop GUI with Store Manager & Tag Generator
@@ -135,34 +135,34 @@ Selimum Etsy Listing Automation/
 ### 1. Generate 13 Etsy SEO Tags for Any Title
 To instantly generate the 13 Etsy SEO tags complying strictly with all 20 rules:
 ```bash
-python create_listing.py --tags "Your Product Title Here"
+python create_listing/create_listing.py --tags "Your Product Title Here"
 ```
 Or double click `generate_tags.bat`.
 
 ### 2. Run Listings for All Stores
 ```bash
-python create_listing.py
+python create_listing/create_listing.py
 ```
 Or double click `run.bat`.
 
 ### 3. Run a Specific Store
 ```bash
-python create_listing.py --store AMH
+python create_listing/create_listing.py --store AMH
 ```
 
 ### 4. Limit Number of Listings (Test Run)
 ```bash
-python create_listing.py --store TSS --limit 1
+python create_listing/create_listing.py --store TSS --limit 1
 ```
 
 ### 5. Run Without VPN or Skip IP Check (Local Testing)
 ```bash
-python create_listing.py --no-vpn --skip-ip-check
+python create_listing/create_listing.py --no-vpn --skip-ip-check
 ```
 
 ### 6. Publish Directly Live (Bypassing Draft Mode)
 ```bash
-python create_listing.py --publish
+python create_listing/create_listing.py --publish
 ```
 
 ### 7. Launch Graphical User Interface (GUI)
