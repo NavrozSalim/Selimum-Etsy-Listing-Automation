@@ -59,7 +59,7 @@ LOG_PATH = BOT_DIR / "create_listing.log"
 OUTPUT_DIR = ROOT / "output"
 FAILURES_DIR = OUTPUT_DIR / "failures"
 PHOTO_DIR = OUTPUT_DIR / "photos"
-DEFAULT_EXCEL = ROOT / "Create.xlsx"
+DEFAULT_EXCEL = BOT_DIR / "Create.xlsx"
 
 IP_CHECK_URL = "https://nordvpn.com/what-is-my-ip/"
 IPIFY_URL = "https://api.ipify.org"

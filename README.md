@@ -51,10 +51,11 @@ Built specifically for high-volume Etsy sellers managing multiple stores with de
 ```
 Selimum Etsy Listing Automation/
 ├── stores.json              # Store configuration (VPN account, assigned IP, Chrome profile)
-├── Create.xlsx              # Master Excel listing input file
-├── create_listing/create_listing.py  # Create listings (price_stock/ and sku_replace/ edit existing ones)
-├── run.bat                  # 1-Click batch runner
-├── generate_tags.bat        # 1-Click prompt to generate 13 SEO tags for any title
+├── create_listing/          # create_listing.py, run.bat, Create.xlsx (default input)
+├── price_stock/             # update_price_stock.py, run.bat
+├── sku_replace/             # sku_replace.py, run.bat
+├── etsy_edit.py             # Shared edit session for price_stock and sku_replace
+├── etsy_output.py           # Done / remaining Excel files written on every stop
 ├── gui.py                   # PyQt6 Desktop GUI with Store Manager & Tag Generator
 ├── requirements.txt         # Dependencies
 ├── core/
@@ -100,7 +101,7 @@ Selimum Etsy Listing Automation/
 
 ---
 
-## 📊 Excel Columns (`Create.xlsx`)
+## 📊 Excel Columns (`create_listing/Create.xlsx`)
 
 | Column Header | Description | Default / Example |
 | :--- | :--- | :--- |
@@ -137,13 +138,12 @@ To instantly generate the 13 Etsy SEO tags complying strictly with all 20 rules:
 ```bash
 python create_listing/create_listing.py --tags "Your Product Title Here"
 ```
-Or double click `generate_tags.bat`.
 
 ### 2. Run Listings for All Stores
 ```bash
 python create_listing/create_listing.py
 ```
-Or double click `run.bat`.
+Or double click `create_listing\run.bat`. With no Excel path it reads `create_listing\Create.xlsx`.
 
 ### 3. Run a Specific Store
 ```bash
