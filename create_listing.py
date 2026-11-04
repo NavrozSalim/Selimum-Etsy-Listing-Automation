@@ -47,6 +47,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select, WebDriverWait
 
 from core.tag_engine import generate_etsy_tags, validate_tags, format_tags_output
+import etsy_output
 
 ROOT = Path(__file__).resolve().parent
 STORES_PATH = ROOT / "stores.json"
@@ -922,21 +923,55 @@ def upload_photos(driver: WebDriver, paths: list[str]) -> bool:
 # -------------------------------------------------------------
 # Etsy Listing Form Automation: Steps 1 through 10
 # -------------------------------------------------------------
-def wait_for_human_or_login(driver: WebDriver, timeout: int = 180) -> bool:
-    """Detects if Etsy requires login or human verification, and pauses for user."""
+class HumanCheckTimeout(RuntimeError):
+    """Etsy login or human check was still showing after SIGN_IN_TIMEOUT. The run stops; Chrome stays open."""
+
+
+_HUMAN_CHECK_JS = """
+function visible(el) {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    return r.width > 2 && r.height > 2 && s.visibility !== 'hidden' && s.display !== 'none';
+}
+const frame = Array.from(document.querySelectorAll('iframe')).find(f =>
+    visible(f) && /captcha-delivery|hcaptcha|recaptcha|challenges\\.cloudflare/i.test(f.src || ''));
+const password = Array.from(document.querySelectorAll('input[type="password"]')).find(visible);
+return !!(frame || password);
+"""
+
+
+def human_check_showing(driver: WebDriver) -> bool:
+    url = (driver.current_url or "").lower()
+    title = (driver.title or "").lower()
+    if "signin" in url or "login" in url:
+        return True
+    if any(word in title for word in ("captcha", "are you human", "security check", "just a moment")):
+        return True
+    try:
+        return bool(driver.execute_script(_HUMAN_CHECK_JS))
+    except Exception as exc:
+        if _browser_gone(exc):
+            raise
+        return False
+
+
+def wait_for_human_or_login(driver: WebDriver, timeout: int = SIGN_IN_TIMEOUT) -> bool:
+    """Pauses while Etsy shows a login or human check. Chrome and its tabs stay open the whole time."""
     start = time.time()
-    last_msg = ""
+    warned = False
     while time.time() - start < timeout:
-        url = (driver.current_url or "").lower()
-        title = (driver.title or "").lower()
-        if "signin" not in url and "login" not in url and "captcha" not in title and "are you human" not in title and "security check" not in title:
+        if not human_check_showing(driver):
+            if warned:
+                log.info("Etsy check is gone. Continuing.")
             return True
-        msg = "Etsy login or Cloudflare check detected! Please complete login/verification in the Chrome window..."
-        if msg != last_msg:
-            log.warning(msg)
-            last_msg = msg
+        if not warned:
+            log.warning(
+                "Etsy login or human check is showing. Finish it in the open Chrome window. Waiting up to %s minutes...",
+                timeout // 60,
+            )
+            warned = True
         time.sleep(3)
-    return False
+    raise HumanCheckTimeout(f"Etsy login or human check was not finished within {timeout // 60} minutes")
 
 
 def click_listing_tab(driver: WebDriver, tab_name: str) -> bool:
@@ -1344,26 +1379,81 @@ def click_matching_element(driver: WebDriver, patterns: list[str], timeout: floa
     return False
 
 
+def listing_screen(driver: WebDriver) -> dict:
+    """Sees whether Etsy is offering Quick listing or the standard editor is already open."""
+    try:
+        info = driver.execute_script(
+            """
+            function visible(el) {
+                if (!el) return false;
+                const r = el.getBoundingClientRect();
+                const s = getComputedStyle(el);
+                return r.width > 2 && r.height > 2 && s.visibility !== 'hidden' && s.display !== 'none';
+            }
+            const labels = [];
+            const nodes = document.querySelectorAll('a, button, [role="button"], [role="link"], [role="menuitem"], h1, h2, h3');
+            for (const el of nodes) {
+                if (!visible(el)) continue;
+                const text = (el.innerText || el.getAttribute('aria-label') || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+                if (!text || text.length > 80) continue;
+                labels.push(text);
+            }
+            return { url: (location.href || '').toLowerCase(), labels: labels };
+            """
+        ) or {}
+    except Exception:
+        return {}
+    labels = [str(item) for item in (info.get("labels") or [])]
+    url = str(info.get("url") or "")
+    def has(phrase: str) -> bool:
+        return any(phrase in label for label in labels)
+    return {
+        "url": url,
+        "quick": has("quick listing") or has("quick list") or "/quick" in url,
+        "standard": has("standard listing") or has("standard list") or has("full listing") or has("start from scratch"),
+        "editor": has("photo & video") or has("item details"),
+    }
+
+
+def choose_standard_listing(driver: WebDriver) -> None:
+    """If Etsy offers Quick listing, open the standard editor and stay there."""
+    for _ in range(3):
+        screen = listing_screen(driver)
+        if screen.get("editor") and not screen.get("quick"):
+            return
+        if not screen.get("quick") and not screen.get("standard"):
+            return
+        log.info("Etsy offered Quick listing. Choosing Standard listing.")
+        clicked = click_matching_element(
+            driver,
+            ["Standard listing", "Standard list", "Full listing form", "Start from scratch"],
+            timeout=4,
+        )
+        if not clicked:
+            log.warning("Standard listing button was not found. Opening the standard editor again.")
+            driver.get(ETSY_CREATE_URL)
+        time.sleep(3)
+        wait_for_human_or_login(driver)
+    screen = listing_screen(driver)
+    if screen.get("quick") and not screen.get("editor"):
+        log.warning("Quick listing is still open. The standard editor was not selected.")
+
+
 def step_1_open_add_listing(driver: WebDriver) -> None:
-    log.info("Step 1: Opening Etsy Shop Manager -> Add a Listing...")
+    log.info("Step 1: Opening the standard Etsy listing editor...")
     driver.get(ETSY_CREATE_URL)
     time.sleep(4)
     wait_for_human_or_login(driver)
+    choose_standard_listing(driver)
 
-    if "listing-editor" not in driver.current_url:
+    screen = listing_screen(driver)
+    if "listing-editor" not in (driver.current_url or "") or (screen.get("quick") and not screen.get("editor")):
         driver.get("https://www.etsy.com/your/shops/me/listings")
         time.sleep(3)
-        for css in ("a[href*='listing-editor']", "button[data-action*='add-listing']", "//a[contains(., 'Add a listing')]"):
-            try:
-                if css.startswith("//"):
-                    btn = driver.find_element(By.XPATH, css)
-                else:
-                    btn = driver.find_element(By.CSS_SELECTOR, css)
-                btn.click()
-                time.sleep(4)
-                break
-            except Exception:
-                pass
+        wait_for_human_or_login(driver)
+        click_matching_element(driver, ["Add a listing"], timeout=4)
+        time.sleep(2)
+        choose_standard_listing(driver)
 
 
 def step_2_fill_item_details(driver: WebDriver, row: ListingRow) -> None:
@@ -2428,6 +2518,7 @@ def process_store(
     *,
     use_vpn: bool,
     check_ip: bool,
+    on_progress: Optional[Any] = None,
 ) -> None:
     store_name = store_info["name"]
     profile = store_info["chrome_profile"]
@@ -2436,6 +2527,7 @@ def process_store(
     port = int(cfg.get("debug_port") or 9222)
     driver: Optional[WebDriver] = None
     chrome_proc: Optional[subprocess.Popen] = None
+    keep_chrome_open = False
 
     log.info("=" * 65)
     log.info("Processing Store: %s | Chrome: %s | VPN: %s | IP: %s", store_name, profile, vpn_account, expected_ip or "(none)")
@@ -2466,28 +2558,38 @@ def process_store(
             log.info("--- Store %s | Row %d/%d | SKU: %s ---", store_name, idx, len(rows), row.sku)
             try:
                 res_status = create_etsy_listing(driver, row)
-                row.status = "SUCCESS"
+                row.status = "OK"
                 row.detail = res_status
-                time.sleep(ROW_DELAY)
+            except HumanCheckTimeout:
+                raise
             except Exception as exc:
                 log.exception("Failed row %d (%s): %s", row.row_number, row.sku, exc)
                 screenshot(driver, f"fail_{row.sku}")
                 dump_form(driver, row.sku)
                 row.status = "FAILED"
                 row.detail = str(exc)
+            if on_progress:
+                on_progress()
+            time.sleep(ROW_DELAY)
 
+    except HumanCheckTimeout:
+        keep_chrome_open = True
+        raise
     except Exception as exc:
         log.exception("Chrome launch failed for %s", store_name)
         mark(rows, "FAILED", f"Chrome launch failed: {exc}")
     finally:
-        try:
-            if driver:
-                driver.quit()
-        except Exception:
-            pass
-        close_chrome(port, chrome_proc)
-        if use_vpn:
-            disconnect_all_vpns(vpncmd, cfg)
+        if keep_chrome_open:
+            log.error("Chrome was left open on the Etsy check. Finish it there, then send the Remaining file again.")
+        else:
+            try:
+                if driver:
+                    driver.quit()
+            except Exception:
+                pass
+            close_chrome(port, chrome_proc)
+            if use_vpn:
+                disconnect_all_vpns(vpncmd, cfg)
 
 
 # -------------------------------------------------------------
@@ -2535,6 +2637,7 @@ def _run_listings(args: argparse.Namespace, excel_path: Path) -> int:
     chrome, user_data, vpncmd = resolve_paths(cfg)
 
     log.info("Loading listings from: %s", excel_path)
+    headers, source = etsy_output.read_source(excel_path)
     rows = read_excel(excel_path)
     if not rows:
         log.warning("No listings found in %s", excel_path)
@@ -2544,42 +2647,60 @@ def _run_listings(args: argparse.Namespace, excel_path: Path) -> int:
         for r in rows:
             r.publish = True
 
-    # Group by store
-    by_store: dict[str, list[ListingRow]] = {}
-    for r in rows:
-        by_store.setdefault(r.store, []).append(r)
+    def save_split() -> tuple[Path, Path]:
+        return etsy_output.write_split(OUTPUT_DIR, "Created", "Remaining", headers, source, etsy_output.finished(rows))
 
-    target_store = (args.store or "").strip().upper()
-    if target_store:
-        if target_store not in by_store:
-            log.error("Store %s not found in Excel rows (%s)", target_store, ", ".join(by_store.keys()))
-            return 1
-        by_store = {target_store: by_store[target_store]}
+    # Created and Remaining are written now, after every row, and in finally, so a stop of any kind
+    # (captcha, crash, Ctrl+C, or the worker killing python) still leaves both files.
+    save_split()
+    code = 0
+    try:
+        # Group by store
+        by_store: dict[str, list[ListingRow]] = {}
+        for r in rows:
+            by_store.setdefault(r.store, []).append(r)
 
-    for store_name, store_rows in by_store.items():
-        info = store_lookup(cfg, store_name)
-        if not info:
-            log.error("Store %s is in Excel but not in stores.json. Skipping.", store_name)
-            mark(store_rows, "SKIPPED", "Not in stores.json")
-            continue
+        target_store = (args.store or "").strip().upper()
+        if target_store:
+            if target_store not in by_store:
+                log.error("Store %s not found in Excel rows (%s)", target_store, ", ".join(by_store.keys()))
+                return 1
+            by_store = {target_store: by_store[target_store]}
 
-        active_rows = store_rows[:args.limit] if args.limit else store_rows
-        process_store(
-            cfg=cfg,
-            chrome=chrome,
-            user_data=user_data,
-            vpncmd=vpncmd,
-            store_info=info,
-            rows=active_rows,
-            use_vpn=not args.no_vpn,
-            check_ip=not args.skip_ip_check,
-        )
+        for store_name, store_rows in by_store.items():
+            info = store_lookup(cfg, store_name)
+            if not info:
+                log.error("Store %s is in Excel but not in stores.json. Skipping.", store_name)
+                mark(store_rows, "SKIPPED", "Not in stores.json")
+                continue
 
-    # Write output summary
-    results_path = OUTPUT_DIR / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    write_results(rows, results_path)
-    return 0
+            active_rows = store_rows[:args.limit] if args.limit else store_rows
+            process_store(
+                cfg=cfg,
+                chrome=chrome,
+                user_data=user_data,
+                vpncmd=vpncmd,
+                store_info=info,
+                rows=active_rows,
+                use_vpn=not args.no_vpn,
+                check_ip=not args.skip_ip_check,
+                on_progress=save_split,
+            )
+    except HumanCheckTimeout as exc:
+        log.error("Stopped: %s", exc)
+        code = 3
+    finally:
+        created_path, remain_path = save_split()
+        results_path = OUTPUT_DIR / f"results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        write_results(rows, results_path)
+        log.info("Created: %s", created_path)
+        log.info("Remaining: %s", remain_path)
+    return code
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        log.error("Stopped by user")
+        sys.exit(130)
